@@ -1,0 +1,227 @@
+import React, { useState, useEffect, useRef } from 'react';
+
+class Entity {
+  constructor(type, value, energy = 100) {
+    this.type = type; // 'X' o 'Y'
+    this.value = value;
+    this.max = value;
+    this.energy = energy;
+    this.age = 0;
+  }
+
+  // Método para evaluar autonomía y toma de decisiones
+  makeAutonomousDecision(neighbors) {
+    // Implementación básica de prueba de Turing
+    const neighborTypes = neighbors.map(n => n ? n.type : null);
+    const compatibleNeighbors = neighbors.filter(n => 
+      n && ((this.type === 'X' && n.type === 'Y') || 
+             (this.type === 'Y' && n.type === 'X'))
+    );
+
+    // Decisión basada en energía, valor y compatibilidad
+    if (compatibleNeighbors.length > 0 && this.energy > 50) {
+      return {
+        reproduce: true,
+        partner: compatibleNeighbors[0]
+      };
+    }
+
+    return { reproduce: false };
+  }
+
+  // Método para actualizar estado de la entidad
+  update() {
+    this.age++;
+    this.energy -= 5; // Consumo de energía por envejecimiento
+    
+    // Reducción de energía basada en complejidad
+    if (this.type === 'X') {
+      this.energy -= 2; // Entidades X más eficientes
+    } else {
+      this.energy -= 3; // Entidades Y menos eficientes
+    }
+  }
+}
+
+class LifeSimulation {
+  constructor(gridSize = 50, reproduccionRate = 0.3, entropiaRate = 0.05) {
+    this.gridSize = gridSize;
+    this.reproduccionRate = reproduccionRate;
+    this.entropiaRate = entropiaRate;
+    this.grid = this.initializeGrid();
+  }
+
+  initializeGrid() {
+    return Array(this.gridSize).fill().map(() => 
+      Array(this.gridSize).fill().map(() => 
+        Math.random() > 0.5 
+          ? new Entity('X', Math.floor(Math.random() * 100)) 
+          : new Entity('Y', Math.floor(Math.random() * 100))
+      )
+    );
+  }
+
+  getNeighbors(x, y) {
+    const neighbors = [
+      this.grid[x-1] ? this.grid[x-1][y] : null,
+      this.grid[x+1] ? this.grid[x+1][y] : null,
+      this.grid[x][y-1] || null,
+      this.grid[x][y+1] || null
+    ];
+    return neighbors;
+  }
+
+  evolve() {
+    const newGrid = this.grid.map(row => [...row]);
+
+    for (let x = 0; x < this.gridSize; x++) {
+      for (let y = 0; y < this.gridSize; y++) {
+        const entity = this.grid[x][y];
+        
+        if (entity) {
+          entity.update();
+
+          // Prueba de autonomía
+          const neighbors = this.getNeighbors(x, y);
+          const decision = entity.makeAutonomousDecision(neighbors);
+
+          // Reproducción autónoma
+          if (decision.reproduce && decision.partner) {
+            if (Math.random() < this.reproduccionRate) {
+              const newEntity = new Entity(
+                Math.random() > 0.5 ? 'X' : 'Y', 
+                (entity.value + decision.partner.value) / 2
+              );
+              newGrid[x][y] = newEntity;
+            }
+          }
+
+          // Control de entropía
+          if (entity.energy <= 0 || entity.age > 20 || Math.random() < this.entropiaRate) {
+            newGrid[x][y] = null;
+          }
+        }
+      }
+    }
+
+    this.grid = newGrid;
+    return this.grid;
+  }
+
+  // Métodos de análisis y estadísticas
+  getSystemStats() {
+    let xCount = 0, yCount = 0, totalEnergy = 0;
+    
+    this.grid.forEach(row => {
+      row.forEach(entity => {
+        if (entity) {
+          if (entity.type === 'X') xCount++;
+          else yCount++;
+          totalEnergy += entity.energy;
+        }
+      });
+    });
+
+    return {
+      xPopulation: xCount,
+      yPopulation: yCount,
+      averageEnergy: totalEnergy / (xCount + yCount)
+    };
+  }
+}
+
+const App = () => {
+  const [simulation, setSimulation] = useState(new LifeSimulation());
+  const [generation, setGeneration] = useState(0);
+  const [stats, setStats] = useState({
+    xPopulation: 0,
+    yPopulation: 0,
+    averageEnergy: 0
+  });
+  const [config, setConfig] = useState({
+    reproduccionRate: 0.3,
+    entropiaRate: 0.05
+  });
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newGrid = simulation.evolve();
+      const newStats = simulation.getSystemStats();
+      
+      setGeneration(prevGen => prevGen + 1);
+      setStats(newStats);
+      drawGrid(newGrid);
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [simulation]);
+
+  const drawGrid = (grid) => {
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.clearRect(0, 0, 500, 500);
+
+    grid.forEach((row, i) => {
+      row.forEach((entity, j) => {
+        if (entity) {
+          // Color basado en energía y tipo
+          const energyIntensity = Math.min(255, Math.max(0, entity.energy * 2.55));
+          ctx.fillStyle = entity.type === 'X' 
+            ? `rgb(0, ${energyIntensity}, 0)` 
+            : `rgb(0, 0, ${energyIntensity})`;
+          ctx.fillRect(j * 10, i * 10, 10, 10);
+        }
+      });
+    });
+  };
+
+  const adjustParameters = (param, value) => {
+    const newConfig = { ...config, [param]: value };
+    setConfig(newConfig);
+    setSimulation(new LifeSimulation(50, newConfig.reproduccionRate, newConfig.entropiaRate));
+    setGeneration(0);
+  };
+
+  return (
+    <div className="p-4">
+      <h1 className="text-2xl mb-4">Simulador de Vida Autónoma - Generación: {generation}</h1>
+      
+      <div className="mb-4">
+        <h2 className="font-bold">Estadísticas del Sistema</h2>
+        <p>Población X: {stats.xPopulation}</p>
+        <p>Población Y: {stats.yPopulation}</p>
+        <p>Energía Promedio: {stats.averageEnergy.toFixed(2)}</p>
+      </div>
+
+      <div className="mb-4">
+        <h2 className="font-bold">Configuración de Parámetros</h2>
+        <div>
+          <label>Tasa de Reproducción: {config.reproduccionRate}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.05" 
+            value={config.reproduccionRate}
+            onChange={(e) => adjustParameters('reproduccionRate', parseFloat(e.target.value))}
+          />
+        </div>
+        <div>
+          <label>Tasa de Entropía: {config.entropiaRate}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="0.2" 
+            step="0.01" 
+            value={config.entropiaRate}
+            onChange={(e) => adjustParameters('entropiaRate', parseFloat(e.target.value))}
+          />
+        </div>
+      </div>
+
+      <canvas ref={canvasRef} width={500} height={500} className="border" />
+    </div>
+  );
+};
+
+export default App;
